@@ -3,8 +3,7 @@
 # ============================================
 # Script de configuración automática de UFW
 # AutoElite - Servidor BD
-# Puerto SSH:        4223
-# Puerto PostgreSQL: 5432 (solo desde 192.168.1.10)
+# Puerto SSH:        4222
 # ============================================
 
 RED='\033[0;31m'
@@ -13,7 +12,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # --- CONFIGURACIÓN ---
-SSH_PORT=4223
+SSH_PORT=4222
 PG_PORT=5432
 WEB_SERVER_IP="192.168.1.10"
 ENABLE_LIMIT_SSH=true
