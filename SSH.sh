@@ -2,15 +2,15 @@
 
 # ============================================
 # Script de Hardening SSH - AutoElite
-# Servidor BD: 192.168.1.20
-# Puerto SSH:  4223
+# Servidor BD: 192.168.1.10
+# Puerto SSH:  4222
 # ============================================
 
 set -euo pipefail
 
 # --- CONFIGURACIÓN ---
 SSH_USER="adminseguro"
-SSH_PORT="4223"
+SSH_PORT="4222"
 SSHD_CONFIG="/etc/ssh/sshd_config"
 
 RED='\033[0;31m'
