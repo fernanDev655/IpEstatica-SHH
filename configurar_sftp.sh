@@ -2,7 +2,6 @@
 
 # =============================================================================
 # Script de Configuración SFTP - AutoElite
-# Servidor BD:  192.168.1.20 | Puerto SSH: 4223
 # Servidor Web: 192.168.1.10 | Puerto SSH: 4222
 # Cliente:      192.168.1.5
 # =============================================================================
@@ -24,7 +23,7 @@ NC='\033[0m'
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  CONFIGURACIÓN AUTOMÁTICA SFTP        ${NC}"
-echo -e "${GREEN}  Servidor BD: 192.168.1.20            ${NC}"
+echo -e "${GREEN}  Servidor BD: 192.168.1.10            ${NC}"
 echo -e "${GREEN}  Puerto SSH:  $SSH_PORT               ${NC}"
 echo -e "${GREEN}========================================${NC}"
 
@@ -175,8 +174,6 @@ echo -e "  🔒 Shell:           ${GREEN}/sbin/nologin (solo SFTP)${NC}"
 echo ""
 echo -e "  📡 Conexión desde el cliente (192.168.1.5):"
 echo ""
-echo -e "     ${YELLOW}Servidor BD (este):${NC}"
-echo -e "     sftp -P $SSH_PORT $SFTP_USER@192.168.1.20"
 echo ""
 echo -e "     ${YELLOW}Servidor Web:${NC}"
 echo -e "     sftp -P 4222 $SFTP_USER@192.168.1.10"
@@ -188,12 +185,5 @@ echo -e "     get archivo.sql  → descargar archivo del servidor"
 echo -e "     ls               → listar archivos"
 echo -e "     exit             → desconectar"
 echo ""
-echo -e "  💡 Para importar un backup de pgAdmin al servidor BD:"
-echo -e "     1. Conéctate por SFTP al servidor BD"
-echo -e "     ${GREEN}sftp -P $SSH_PORT $SFTP_USER@192.168.1.20${NC}"
-echo -e "     2. Sube el fichero .sql"
-echo -e "     ${GREEN}put basedatos.sql${NC}"
-echo -e "     3. Impórtalo en PostgreSQL (desde SSH al servidor BD)"
-echo -e "     ${GREEN}sudo -u postgres psql -d autoelite_db -f $DATA_DIR/$SFTP_USER/upload/basedatos.sql${NC}"
 echo ""
 echo -e "${GREEN}========================================${NC}"
