@@ -1,183 +1,199 @@
 #!/bin/bash
 
 # =============================================================================
-# SCRIPT DE CONFIGURACIÓN AUTOMÁTICA DE SERVIDOR SFTP EN UBUNTU
-# Basado en la guía oficial de Zentyal
+# Script de Configuración SFTP - AutoElite
+# Servidor BD:  192.168.1.20 | Puerto SSH: 4223
+# Servidor Web: 192.168.1.10 | Puerto SSH: 4222
+# Cliente:      192.168.1.5
 # =============================================================================
 
-set -e  # Detenerse si hay algún error
+set -e
 
-# --- CONFIGURACIÓN PERSONALIZABLE ---
+# --- CONFIGURACIÓN ---
 SFTP_USER="user"
 SFTP_GROUP="sftp_users"
-SFTP_PASSWORD="user123"  # Cambiar por contraseña segura
+SFTP_PASSWORD="user123"
 DATA_DIR="/data"
 SSH_CONFIG="/etc/ssh/sshd_config"
+SSH_PORT="4223"         # Puerto del servidor BD (distinto al web que usa 4222)
 
-# Colores para output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  CONFIGURACIÓN AUTOMÁTICA SFTP${NC}"
-echo -e "${GREEN}  Basado en guía Zentyal${NC}"
+echo -e "${GREEN}  CONFIGURACIÓN AUTOMÁTICA SFTP        ${NC}"
+echo -e "${GREEN}  Servidor BD: 192.168.1.20            ${NC}"
+echo -e "${GREEN}  Puerto SSH:  $SSH_PORT               ${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# =============================================================================
-# PASO 1: ACTUALIZAR E INSTALAR OPENSSH-SERVER
-# =============================================================================
-echo -e "\n${YELLOW}[PASO 1/6] Actualizando paquetes e instalando OpenSSH...${NC}"
-sudo apt update -qq
-sudo apt install -y -qq openssh-server
+if [[ $EUID -ne 0 ]]; then
+    echo -e "${RED}[ERROR]${NC} Ejecutar como root: sudo $0"
+    exit 1
+fi
 
-echo -e "${GREEN}✓ OpenSSH instalado correctamente${NC}"
+# =============================================================================
+# PASO 1: INSTALAR OPENSSH
+# =============================================================================
+echo -e "\n${YELLOW}[PASO 1/6] Instalando OpenSSH...${NC}"
+apt update -qq
+apt install -y -qq openssh-server
+echo -e "${GREEN}✓ OpenSSH instalado${NC}"
 
 # =============================================================================
 # PASO 2: CREAR GRUPO Y USUARIO SFTP
 # =============================================================================
 echo -e "\n${YELLOW}[PASO 2/6] Creando grupo y usuario SFTP...${NC}"
 
-# Crear grupo si no existe
 if getent group "$SFTP_GROUP" > /dev/null 2>&1; then
     echo -e "${YELLOW}  → El grupo '$SFTP_GROUP' ya existe, omitiendo...${NC}"
 else
-    sudo groupadd "$SFTP_GROUP"
+    groupadd "$SFTP_GROUP"
     echo -e "${GREEN}  ✓ Grupo '$SFTP_GROUP' creado${NC}"
 fi
 
-# Crear usuario si no existe
 if id "$SFTP_USER" > /dev/null 2>&1; then
     echo -e "${YELLOW}  → El usuario '$SFTP_USER' ya existe, omitiendo...${NC}"
 else
-    # -m: crear directorio home
-    # -g: grupo primario
-    # -s /sbin/nologin: sin acceso a shell SSH (solo SFTP)
-    sudo useradd -m -g "$SFTP_GROUP" -s /sbin/nologin "$SFTP_USER"
-
-    # Establecer contraseña
-    echo "$SFTP_USER:$SFTP_PASSWORD" | sudo chpasswd
-    echo -e "${GREEN}  ✓ Usuario '$SFTP_USER' creado con shell /sbin/nologin${NC}"
+    useradd -m -g "$SFTP_GROUP" -s /sbin/nologin "$SFTP_USER"
+    echo "$SFTP_USER:$SFTP_PASSWORD" | chpasswd
+    echo -e "${GREEN}  ✓ Usuario '$SFTP_USER' creado (solo SFTP, sin shell)${NC}"
     echo -e "${GREEN}  ✓ Contraseña establecida${NC}"
 fi
 
 # =============================================================================
-# PASO 3: CREAR ESTRUCTURA DE DIRECTORIOS Y PERMISOS
+# PASO 3: DIRECTORIOS Y PERMISOS
 # =============================================================================
 echo -e "\n${YELLOW}[PASO 3/6] Configurando directorios y permisos...${NC}"
 
-# Crear directorio principal y subdirectorio upload
-sudo mkdir -p "$DATA_DIR/$SFTP_USER/upload"
+mkdir -p "$DATA_DIR/$SFTP_USER/upload"
 
-# /data/user → propietario root, grupo sftp_users, permisos 755
-# REGLA OBLIGATORIA: chroot debe ser propiedad de root y NO escribible por el usuario
-sudo chown root:"$SFTP_GROUP" "$DATA_DIR/$SFTP_USER"
-sudo chmod 755 "$DATA_DIR/$SFTP_USER"
+# Directorio raíz: propietario root (obligatorio para chroot)
+chown root:"$SFTP_GROUP" "$DATA_DIR/$SFTP_USER"
+chmod 755 "$DATA_DIR/$SFTP_USER"
 echo -e "${GREEN}  ✓ $DATA_DIR/$SFTP_USER → root:$SFTP_GROUP, 755${NC}"
 
-# /data/user/upload → propietario el usuario, grupo sftp_users
-# Aquí el usuario SÍ puede escribir (subir archivos)
-sudo chown "$SFTP_USER":"$SFTP_GROUP" "$DATA_DIR/$SFTP_USER/upload"
-sudo chmod 755 "$DATA_DIR/$SFTP_USER/upload"
+# Directorio upload: el usuario puede escribir aquí
+chown "$SFTP_USER":"$SFTP_GROUP" "$DATA_DIR/$SFTP_USER/upload"
+chmod 755 "$DATA_DIR/$SFTP_USER/upload"
 echo -e "${GREEN}  ✓ $DATA_DIR/$SFTP_USER/upload → $SFTP_USER:$SFTP_GROUP, 755${NC}"
 
 # =============================================================================
-# PASO 4: CONFIGURAR sshd_config
+# PASO 4: CONFIGURAR SSHD_CONFIG
 # =============================================================================
 echo -e "\n${YELLOW}[PASO 4/6] Configurando sshd_config...${NC}"
 
-# Crear backup del archivo original
-sudo cp "$SSH_CONFIG" "$SSH_CONFIG.backup.$(date +%Y%m%d_%H%M%S)"
-echo -e "${GREEN}  ✓ Backup creado${NC}"
+BACKUP_FILE="${SSH_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
+cp "$SSH_CONFIG" "$BACKUP_FILE"
+echo -e "${GREEN}  ✓ Backup creado: $BACKUP_FILE${NC}"
 
-# Verificar si ya existe la configuración SFTP
+# Asegurarse de que el puerto está bien configurado
+if grep -qE "^Port" "$SSH_CONFIG"; then
+    sed -i "s/^Port.*/Port $SSH_PORT/" "$SSH_CONFIG"
+else
+    echo "Port $SSH_PORT" >> "$SSH_CONFIG"
+fi
+echo -e "${GREEN}  ✓ Puerto SSH confirmado: $SSH_PORT${NC}"
+
+# Añadir bloque SFTP si no existe ya
 if grep -q "Match Group $SFTP_GROUP" "$SSH_CONFIG"; then
     echo -e "${YELLOW}  → Configuración SFTP ya existe en sshd_config, omitiendo...${NC}"
 else
-    # Añadir configuración al final del archivo
-    sudo tee -a "$SSH_CONFIG" > /dev/null <<'EOF'
+    cat >> "$SSH_CONFIG" << EOF
 
 # =============================================================================
-# CONFIGURACIÓN SFTP - AÑADIDA AUTOMÁTICAMENTE
-# Basado en guía Zentyal: https://www.zentyal.com/news/como-configurar-un-servidor-sftp-en-linux/
+# CONFIGURACIÓN SFTP - AutoElite Servidor BD
+# El cliente 192.168.1.5 puede conectar a este servidor (192.168.1.20)
+# y al servidor web (192.168.1.10) con las mismas credenciales SFTP
 # =============================================================================
+Match Group $SFTP_GROUP
 
-# Match Group: bloque condicional que solo aplica a usuarios del grupo sftp_users
-# Permite tener reglas exclusivas para SFTP sin afectar usuarios SSH normales
-Match Group sftp_users
+    # Jaula: el usuario ve esta carpeta como raíz, no puede salir
+    ChrootDirectory $DATA_DIR/%u
 
-    # ChrootDirectory: define la jaula (jail) del usuario
-    # %u se sustituye por el nombre de usuario conectado
-    # El usuario NO puede salir de este directorio - ve esta carpeta como la raíz (/)
-    ChrootDirectory /data/%u
-
-    # ForceCommand: fuerza el uso exclusivo del subsistema SFTP interno
-    # Impide que el usuario abra un shell SSH interactivo
-    # Solo permite transferencia de archivos (subir/bajar/listar)
+    # Solo transferencia de archivos, sin shell interactiva
     ForceCommand internal-sftp
 
-    # AllowTcpForwarding no: bloquea la creación de túneles TCP (port forwarding)
-    # Evita que el usuario use la conexión como puente a otros servicios internos
+    # Sin túneles TCP ni sesiones gráficas
     AllowTcpForwarding no
-
-    # X11Forwarding no: deshabilita reenvío de sesiones gráficas X11
-    # El usuario no puede lanzar aplicaciones gráficas del servidor en su máquina
     X11Forwarding no
 
-# =============================================================================
 EOF
-    echo -e "${GREEN}  ✓ Configuración SFTP añadida a sshd_config${NC}"
+    echo -e "${GREEN}  ✓ Bloque SFTP añadido a sshd_config${NC}"
 fi
 
 # =============================================================================
-# PASO 5: REINICIAR SERVICIO SSH
+# PASO 5: REINICIAR SSH
 # =============================================================================
 echo -e "\n${YELLOW}[PASO 5/6] Reiniciando servicio SSH...${NC}"
-sudo systemctl restart sshd
 
-# Verificar que el servicio está activo
-if systemctl is-active --quiet sshd; then
-    echo -e "${GREEN}  ✓ Servicio SSH reiniciado correctamente${NC}"
+if sshd -t; then
+    systemctl restart sshd
+    echo -e "${GREEN}  ✓ SSH reiniciado correctamente${NC}"
 else
-    echo -e "${RED}  ✗ ERROR: El servicio SSH no se reinició correctamente${NC}"
+    echo -e "${RED}  ✗ Error en sshd_config. Restaurando backup...${NC}"
+    cp "$BACKUP_FILE" "$SSH_CONFIG"
+    exit 1
+fi
+
+if systemctl is-active --quiet sshd; then
+    echo -e "${GREEN}  ✓ Servicio SSH activo${NC}"
+else
+    echo -e "${RED}  ✗ El servicio SSH no está activo${NC}"
     exit 1
 fi
 
 # =============================================================================
-# PASO 6: VERIFICACIÓN FINAL
+# PASO 6: VERIFICACIÓN
 # =============================================================================
 echo -e "\n${YELLOW}[PASO 6/6] Verificando configuración...${NC}"
 
-# Verificar sintaxis de sshd_config
-if sudo sshd -t; then
+if sshd -t; then
     echo -e "${GREEN}  ✓ Sintaxis de sshd_config correcta${NC}"
-else
-    echo -e "${RED}  ✗ ERROR: Sintaxis incorrecta en sshd_config${NC}"
-    exit 1
 fi
 
-# Mostrar resumen
-echo -e "\n${GREEN}========================================${NC}"
-echo -e "${GREEN}  CONFIGURACIÓN COMPLETADA${NC}"
+if ss -tlnp | grep -q ":$SSH_PORT"; then
+    echo -e "${GREEN}  ✓ SSH escuchando en puerto $SSH_PORT${NC}"
+else
+    echo -e "${YELLOW}  ⚠ SSH no detectado en puerto $SSH_PORT aún${NC}"
+fi
+
+# =============================================================================
+# RESUMEN FINAL
+# =============================================================================
+echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "\n${YELLOW}Resumen de la configuración:${NC}"
-echo -e "  • Grupo creado:     $SFTP_GROUP"
-echo -e "  • Usuario creado:   $SFTP_USER"
-echo -e "  • Contraseña:       $SFTP_PASSWORD"
-echo -e "  • Directorio raíz:  $DATA_DIR/$SFTP_USER (root:$SFTP_GROUP, 755)"
-echo -e "  • Directorio upload: $DATA_DIR/$SFTP_USER/upload ($SFTP_USER:$SFTP_GROUP, 755)"
-echo -e "  • Puerto SFTP:      22"
-echo -e "  • Shell:            /sbin/nologin (solo SFTP, no SSH)"
-
-SERVER_IP=$(hostname -I | awk '{print $1}')
-echo -e "\n${YELLOW}Para conectarte desde otro equipo:${NC}"
-echo -e "  sftp -P 22 $SFTP_USER@$SERVER_IP"
-echo -e "\n${YELLOW}Comandos útiles una vez conectado:${NC}"
-echo -e "  ls              → Listar archivos"
-echo -e "  put archivo.txt → Subir archivo"
-echo -e "  get archivo.txt → Descargar archivo"
-echo -e "  cd upload       → Entrar a carpeta de subidas"
-echo -e "  exit            → Desconectar"
-
-echo -e "\n${GREEN}========================================${NC}"
+echo -e "${GREEN}  CONFIGURACIÓN SFTP COMPLETADA        ${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "  👤 Usuario SFTP:    ${GREEN}$SFTP_USER${NC}"
+echo -e "  🔑 Contraseña:      ${GREEN}$SFTP_PASSWORD${NC}"
+echo -e "  📁 Directorio raíz: ${GREEN}$DATA_DIR/$SFTP_USER${NC}"
+echo -e "  📂 Subir archivos:  ${GREEN}$DATA_DIR/$SFTP_USER/upload${NC}"
+echo -e "  🔒 Shell:           ${GREEN}/sbin/nologin (solo SFTP)${NC}"
+echo ""
+echo -e "  📡 Conexión desde el cliente (192.168.1.5):"
+echo ""
+echo -e "     ${YELLOW}Servidor BD (este):${NC}"
+echo -e "     sftp -P $SSH_PORT $SFTP_USER@192.168.1.20"
+echo ""
+echo -e "     ${YELLOW}Servidor Web:${NC}"
+echo -e "     sftp -P 4222 $SFTP_USER@192.168.1.10"
+echo ""
+echo -e "  📝 Comandos útiles una vez conectado:"
+echo -e "     cd upload        → entrar a la carpeta de subidas"
+echo -e "     put archivo.sql  → subir archivo al servidor"
+echo -e "     get archivo.sql  → descargar archivo del servidor"
+echo -e "     ls               → listar archivos"
+echo -e "     exit             → desconectar"
+echo ""
+echo -e "  💡 Para importar un backup de pgAdmin al servidor BD:"
+echo -e "     1. Conéctate por SFTP al servidor BD"
+echo -e "     ${GREEN}sftp -P $SSH_PORT $SFTP_USER@192.168.1.20${NC}"
+echo -e "     2. Sube el fichero .sql"
+echo -e "     ${GREEN}put basedatos.sql${NC}"
+echo -e "     3. Impórtalo en PostgreSQL (desde SSH al servidor BD)"
+echo -e "     ${GREEN}sudo -u postgres psql -d autoelite_db -f $DATA_DIR/$SFTP_USER/upload/basedatos.sql${NC}"
+echo ""
+echo -e "${GREEN}========================================${NC}"
