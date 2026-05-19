@@ -16,7 +16,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # --- CONFIGURACIÓN ---
 IFACE="enp0s3"
-IP="192.168.1.20"
+IP="192.168.1.10"
 GATEWAY="192.168.1.1"
 DNS="208.67.222.222"
 
