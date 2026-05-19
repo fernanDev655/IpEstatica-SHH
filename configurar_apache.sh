@@ -19,7 +19,7 @@ HTTP_PORT=80
 HTTPS_PORT=443
 SERVER_IP="192.168.1.10"
 CLIENT_IP="192.168.1.5"
-SSH_PORT=4223
+SSH_PORT=4222
 
 log_info()    { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
@@ -366,7 +366,6 @@ echo -e "  🖥️  Servidor:   ${GREEN}$SERVER_IP${NC}"
 echo -e "  🌐  HTTP:       ${GREEN}http://$SERVER_IP${NC}"
 echo -e "  🔒  HTTPS:      ${GREEN}https://$SERVER_IP${NC}"
 echo -e "  🔑  SSH:        ${GREEN}puerto $SSH_PORT${NC}"
-echo -e "  🐘  BD:         ${GREEN}192.168.1.20:5432${NC}"
 echo ""
 echo -e "  📝  Ver logs del cliente ($CLIENT_IP):"
 echo -e "      ${YELLOW}sudo grep '$CLIENT_IP' /var/log/apache2/access.log${NC}"
